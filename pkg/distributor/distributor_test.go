@@ -39,6 +39,7 @@ import (
 	"github.com/weaveworks/common/mtime"
 	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
+	"golang.org/x/exp/slices"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -1244,6 +1245,23 @@ func TestDistributor_Push_LabelRemoval(t *testing.T) {
 				"foo", "bar", "some", "thing"),
 			expectedSeries: labels.FromStrings("__name__", "some_metric", "cluster", "one"),
 		},
+		// Remove blank labels.
+		{
+			inputSeries:    labels.FromStrings("__name__", "some_metric", "blank", "", "foo", "bar"),
+			expectedSeries: labels.FromStrings("__name__", "some_metric", "foo", "bar"),
+		},
+		{
+			inputSeries:    labels.FromStrings("__name__", "some_metric", "foo", "bar", "zzz_blank", ""),
+			expectedSeries: labels.FromStrings("__name__", "some_metric", "foo", "bar"),
+		},
+		{
+			inputSeries:    labels.FromStrings("__blank__", "", "__name__", "some_metric", "foo", "bar"),
+			expectedSeries: labels.FromStrings("__name__", "some_metric", "foo", "bar"),
+		},
+		{
+			inputSeries:    labels.FromStrings("__blank__", "", "__name__", "some_metric", "foo", "bar", "zzz_blank", ""),
+			expectedSeries: labels.FromStrings("__name__", "some_metric", "foo", "bar"),
+		},
 		// Don't remove any labels.
 		{
 			removeReplica:  false,
@@ -2237,7 +2255,7 @@ func TestDistributor_LabelNamesAndValues(t *testing.T) {
 
 			// sort label values to make stable assertion
 			for _, item := range response.Items {
-				sort.Strings(item.Values)
+				slices.Sort(item.Values)
 			}
 			assert.ElementsMatch(t, response.Items, expectedLabelValues)
 		})
@@ -3942,7 +3960,7 @@ func (i *mockIngester) MetricsForLabelMatchers(ctx context.Context, req *client.
 		return nil, errFail
 	}
 
-	_, _, multiMatchers, err := client.FromMetricsForLabelMatchersRequest(req)
+	multiMatchers, err := client.FromMetricsForLabelMatchersRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -3981,7 +3999,7 @@ func (i *mockIngester) LabelNames(ctx context.Context, req *client.LabelNamesReq
 			}
 		}
 	}
-	sort.Strings(response.LabelNames)
+	slices.Sort(response.LabelNames)
 
 	return &response, nil
 }
@@ -4271,6 +4289,19 @@ func TestDistributorValidation(t *testing.T) {
 			}},
 		},
 
+		// Test validation passes when labels are unsorted.
+		{
+			labels: []labels.Labels{mimirpb.FromLabelAdaptersToLabels(
+				[]mimirpb.LabelAdapter{
+					{Name: "foo", Value: "bar"},
+					{Name: labels.MetricName, Value: "testmetric"},
+				})},
+			samples: []mimirpb.Sample{{
+				TimestampMs: int64(now),
+				Value:       1,
+			}},
+		},
+
 		// Test validation fails for samples from the future.
 		{
 			labels: []labels.Labels{labels.FromStrings(labels.MetricName, "testmetric", "foo", "bar")},
@@ -4308,7 +4339,7 @@ func TestDistributorValidation(t *testing.T) {
 		// Test metadata validation fails
 		{
 			metadata: []*mimirpb.MetricMetadata{{MetricFamilyName: "", Help: "a test metric.", Unit: "", Type: mimirpb.COUNTER}},
-			labels:   []labels.Labels{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
+			labels:   []labels.Labels{labels.FromStrings(labels.MetricName, "testmetric", "foo", "bar")},
 			samples: []mimirpb.Sample{{
 				TimestampMs: int64(now),
 				Value:       1,
@@ -4330,7 +4361,7 @@ func TestDistributorValidation(t *testing.T) {
 				Value:       1,
 			}},
 			expectedStatusCode: http.StatusBadRequest,
-			expectedErr:        fmt.Sprintf("received an exemplar with no valid labels, timestamp: %d series: %+v labels: {}", now, labels.Labels{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}),
+			expectedErr:        fmt.Sprintf("received an exemplar with no valid labels, timestamp: %d series: %+v labels: {}", now, labels.FromStrings(labels.MetricName, "testmetric", "foo", "bar")),
 		},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
@@ -4405,7 +4436,7 @@ func TestRemoveReplicaLabel(t *testing.T) {
 	}
 }
 
-// This is not great, but we deal with unsorted labels when validating labels.
+// This is not great, but we deal with unsorted labels in prePushRelabelMiddleware.
 func TestShardByAllLabelsReturnsWrongResultsForUnsortedLabels(t *testing.T) {
 	val1 := shardByAllLabels("test", []mimirpb.LabelAdapter{
 		{Name: "__name__", Value: "foo"},
@@ -4444,9 +4475,9 @@ func TestSortLabels(t *testing.T) {
 
 	sortLabelsIfNeeded(unsorted)
 
-	sort.SliceIsSorted(unsorted, func(i, j int) bool {
+	require.True(t, sort.SliceIsSorted(unsorted, func(i, j int) bool {
 		return unsorted[i].Name < unsorted[j].Name
-	})
+	}))
 }
 
 func TestDistributor_Push_Relabel(t *testing.T) {
@@ -4895,10 +4926,7 @@ func TestDistributor_CleanupIsDoneAfterLastIngesterReturns(t *testing.T) {
 	})
 	ingesters[2].pushDelay = time.Second // give the test enough time to do assertions
 
-	lbls := labels.Labels{
-		{Name: "__name__", Value: "metric_1"},
-		{Name: "key", Value: "value_1"},
-	}
+	lbls := labels.FromStrings("__name__", "metric_1", "key", "value_1")
 	ctx := user.InjectOrgID(context.Background(), "user")
 
 	_, err := distributors[0].Push(ctx, mockWriteRequest(lbls, 1, 1))
@@ -4906,7 +4934,7 @@ func TestDistributor_CleanupIsDoneAfterLastIngesterReturns(t *testing.T) {
 
 	// First push request returned, but there's still an ingester call inflight.
 	// This means that the push request is counted as inflight, so another incoming request should be rejected.
-	_, err = distributors[0].Push(ctx, mockWriteRequest(nil, 1, 1))
+	_, err = distributors[0].Push(ctx, mockWriteRequest(labels.EmptyLabels(), 1, 1))
 	assert.ErrorIs(t, err, errMaxInflightRequestsReached)
 }
 

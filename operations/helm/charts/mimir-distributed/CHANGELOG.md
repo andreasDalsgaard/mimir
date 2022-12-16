@@ -28,6 +28,12 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [ENHANCEMENT] Update the `rollout-operator` subchart to `0.2.0`. #3624
+* [ENHANCEMENT] Add ability to manage PrometheusRule for metamonitoring with Prometheus operator from the Helm chart. The alerts are disabled by default but can be enabled with `prometheusRule.mimirAlerts` set to `true`. To enable the default rules, set `mimirRules` to `true`. #2134 #2609
+* [BUGFIX] Enable `rollout-operator` to use PodSecurityPolicies if necessary
+
+## 4.0.0
+
 * [FEATURE] Support deploying NGINX via the `gateway` section. The `nginx` section will be removed in `7.0.0`. See
   [Migrate to using the unified proxy deployment for NGINX and GEM gateway](https://grafana.com/docs/mimir/latest/operators-guide/deploying-grafana-mimir/migrate-to-unified-gateway-deployment/)
 * [CHANGE] **breaking change** **Data loss without action.** Enables [zone-aware replication](https://grafana.com/docs/mimir/latest/operators-guide/configure/configure-zone-aware-replication/) for ingesters and store-gateways by default. #2778
@@ -63,6 +69,7 @@ Entries should include a reference to the Pull Request that introduced the chang
   Mimir under the `metamonitoring` tenant; this enhancement does not apply to GEM. #3176
 * [ENHANCEMENT] Improve default rollout strategies. Now distributor, overrides_exporter, querier, query_frontend, admin_api, gateway, and graphite components can be upgraded more quickly and also can be rolled out with a single replica without downtime. #3029
 * [ENHANCEMENT] Metamonitoring: make scrape interval configurable. #2945
+* [ENHANCEMENT] Documented how to prevent a user from using a mismatched Helm chart `values.yaml` file. #3197
 * [ENHANCEMENT] Update compactor configuration to match Jsonnet. #3353
   * This also now matches production configuration from Grafana Cloud
   * Set `compactor.compaction_interval` to `30m` (Decreased from `1h`)
@@ -91,6 +98,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Nginx: fixed `imagePullSecret` value reference inconsistency. #3208
 * [BUGFIX] Move the activity tracker log from /data to /active-query-tracker to remove ignore log messages. #3169
 * [BUGFIX] Fix Invalid ingress nginx config due to newline in prometheusHttpPrefix Helm named templates. #3088
+* [BUGFIX] Added missing endpoint for OTLP in NGINX #3479
 
 ## 3.2.0
 

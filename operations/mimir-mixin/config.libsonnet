@@ -67,7 +67,7 @@
     // These are used by the dashboards and allow for the simultaneous display of
     // microservice and single binary Mimir clusters.
     // Whenever you do any change here, please reflect it in the doc at:
-    // docs/sources/operators-guide/monitoring-grafana-mimir/requirements.md
+    // docs/sources/mimir/operators-guide/monitoring-grafana-mimir/requirements.md
     job_names: {
       ingester: '(ingester.*|cortex|mimir|mimir-write.*)',  // Match also custom and per-zone ingester deployments.
       distributor: '(distributor|cortex|mimir|mimir-write.*)',
@@ -154,6 +154,13 @@
       alertmanager_im: componentNameRegexp.alertmanager_im,
       compactor: componentNameRegexp.compactor,
 
+      // Read-write deployment mode. The following matchers MUST match only
+      // the container when deployed in read-write deployment mode (e.g. "mimir-write"
+      // matcher shouldn't match "distributor" too).
+      mimir_write: componentNameRegexp.mimir_write,
+      mimir_read: componentNameRegexp.mimir_read,
+      mimir_backend: componentNameRegexp.mimir_backend,
+
       // The following are container matchers used to select all components in a given "path".
       // These matchers CAN match both instances deployed in "microservices" and "read-write" mode.
       local componentsGroupMatcher = function(components) std.join('|', std.map(function(name) componentNameRegexp[name], components)),
@@ -165,10 +172,13 @@
 
     // The label used to differentiate between different Kubernetes clusters.
     per_cluster_label: 'cluster',
+    per_namespace_label: 'namespace',
+    per_job_label: 'job',
 
     // Grouping labels, to uniquely identify and group by {jobs, clusters}
-    job_labels: [$._config.per_cluster_label, 'namespace', 'job'],
-    cluster_labels: [$._config.per_cluster_label, 'namespace'],
+    job_labels: [$._config.per_cluster_label, $._config.per_namespace_label, $._config.per_job_label],
+    job_prefix: '($namespace)/',
+    cluster_labels: [$._config.per_cluster_label, $._config.per_namespace_label],
 
     // PromQL queries used to find clusters and namespaces with Mimir.
     dashboard_variables: {
@@ -198,16 +208,6 @@
     // System mount point where mimir stores its data, used for baremetal
     // deployment only.
     instance_data_mountpoint: '/',
-    resources_panel_series: {
-      kubernetes: {
-        network_receive_bytes_metrics: 'container_network_receive_bytes_total',
-        network_transmit_bytes_metrics: 'container_network_transmit_bytes_total',
-      },
-      baremetal: {
-        network_receive_bytes_metrics: 'node_network_receive_bytes_total',
-        network_transmit_bytes_metrics: 'node_network_transmit_bytes_total',
-      },
-    },
     resources_panel_queries: {
       kubernetes: {
         cpu_usage: 'sum by(%(instanceLabel)s) (rate(container_cpu_usage_seconds_total{%(namespace)s,container=~"%(containerName)s"}[$__rate_interval]))',
@@ -224,7 +224,8 @@
         memory_rss_limit: 'min(container_spec_memory_limit_bytes{%(namespace)s,container=~"%(containerName)s"} > 0)',
         memory_rss_request: 'min(kube_pod_container_resource_requests{%(namespace)s,container=~"%(containerName)s",resource="memory"})',
         memory_go_heap_usage: 'sum by(%(instanceLabel)s) (go_memstats_heap_inuse_bytes{%(namespace)s,container=~"%(containerName)s"})',
-        network: 'sum by(%(instanceLabel)s) (rate(%(metric)s{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]))',
+        network_receive_bytes: 'sum by(%(instanceLabel)s) (rate(container_network_receive_bytes_total{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]))',
+        network_transmit_bytes: 'sum by(%(instanceLabel)s) (rate(container_network_transmit_bytes_total{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]))',
         disk_writes:
           |||
             sum by(%(nodeLabel)s, %(instanceLabel)s, device) (
@@ -280,7 +281,8 @@
             + node_memory_SwapCached_bytes{%(namespace)s,%(instanceLabel)s=~"%(instanceName)s"}
           |||,
         memory_go_heap_usage: 'sum by(%(instanceLabel)s) (go_memstats_heap_inuse_bytes{%(namespace)s,%(instanceLabel)s=~"%(instanceName)s"})',
-        network: 'sum by(%(instanceLabel)s) (rate(%(metric)s{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]))',
+        network_receive_bytes: 'sum by(%(instanceLabel)s) (rate(node_network_receive_bytes_total{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]))',
+        network_transmit_bytes: 'sum by(%(instanceLabel)s) (rate(node_network_transmit_bytes_total{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]))',
         disk_writes:
           |||
             sum by(%(nodeLabel)s, %(instanceLabel)s, device) (

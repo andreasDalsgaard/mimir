@@ -36,6 +36,7 @@ import (
 	"github.com/weaveworks/common/mtime"
 	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
+	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/dskit/tenant"
@@ -589,6 +590,15 @@ func removeLabel(labelName string, labels *[]mimirpb.LabelAdapter) {
 	}
 }
 
+// Remove labels with value=="" from a slice of LabelPairs, updating the slice in-place.
+func removeEmptyLabelValues(labels *[]mimirpb.LabelAdapter) {
+	for i := len(*labels) - 1; i >= 0; i-- {
+		if (*labels)[i].Value == "" {
+			*labels = append((*labels)[:i], (*labels)[i+1:]...)
+		}
+	}
+}
+
 // Returns a boolean that indicates whether or not we want to remove the replica label going forward,
 // and an error that indicates whether we want to accept samples based on the cluster/replica found in ts.
 // nil for the error means accept the sample.
@@ -794,6 +804,9 @@ func (d *Distributor) prePushRelabelMiddleware(next push.Func) push.Func {
 			for _, labelName := range d.limits.DropLabels(userID) {
 				removeLabel(labelName, &ts.Labels)
 			}
+
+			// Prometheus strips empty values before storing; drop them now, before sharding to ingesters.
+			removeEmptyLabelValues(&ts.Labels)
 
 			if len(ts.Labels) == 0 {
 				removeTsIndexes = append(removeTsIndexes, tsIdx)
@@ -1333,7 +1346,7 @@ func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to mode
 	}
 
 	// We need the values returned to be sorted.
-	sort.Strings(values)
+	slices.Sort(values)
 
 	return values, nil
 }
@@ -1633,7 +1646,7 @@ func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, match
 		values = append(values, v)
 	}
 
-	sort.Strings(values)
+	slices.Sort(values)
 
 	return values, nil
 }
